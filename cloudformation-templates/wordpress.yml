@@ -14,13 +14,7 @@ Conditions:
     - Fn::Equals:
       - Ref: AWS::Region
       - ap-northeast-2
-Description: 'AWS CloudFormation Sample Template WordPress_Multi_AZ: WordPress is
-  web software you can use to create a beautiful website or blog. This template installs
-  a highly-available, scalable WordPress deployment using a multi-az Amazon RDS database
-  instance for storage. It demonstrates using the AWS CloudFormation bootstrap scripts
-  to deploy WordPress. **WARNING** This template creates an Amazon EC2 instance, an
-  Elastic Load Balancer and an Amazon RDS database instance. You will be billed for
-  the AWS resources used if you create a stack from this template.'
+Description: ''
 Mappings:
   AWSInstanceType2Arch:
     c1.medium:
@@ -349,7 +343,7 @@ Parameters:
     - db.t2.medium
     - db.t2.large
     ConstraintDescription: must select a valid database instance type.
-    Default: db.t2.small
+    Default: db.t2.micro
     Description: Database instance class
     Type: String
   DBName:
@@ -516,8 +510,7 @@ Resources:
     Type: AWS::RDS::DBSecurityGroup
   ElasticLoadBalancer:
     Properties:
-      AvailabilityZones:
-        Fn::GetAZs: ''
+      AvailabilityZones: ['ap-southeast-2a']
       CrossZone: 'true'
       HealthCheck:
         HealthyThreshold: '2'
@@ -535,13 +528,89 @@ Resources:
         - CookieBasedPolicy
         Protocol: HTTP
     Type: AWS::ElasticLoadBalancing::LoadBalancer
+  Ec2IamRole:
+    Type: "AWS::IAM::Role"
+    Properties: 
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement: 
+          - 
+            Effect: "Allow"
+            Principal: 
+              Service: 
+                - "ec2.amazonaws.com"
+            Action: 
+              - "sts:AssumeRole"
+      Policies:
+        - 
+          PolicyName: "attach-volume"
+          PolicyDocument: 
+            Version: "2012-10-17"
+            Statement: 
+              - 
+                Effect: "Allow"
+                Action: "ec2:AttachVolume"
+                Resource: "*"
+  InstanceProfile:
+    Type: "AWS::IAM::InstanceProfile"
+    Properties: 
+      Roles:
+        - !Ref Ec2IamRole
   LaunchConfig:
     Metadata:
       AWS::CloudFormation::Init:
         configSets:
           wordpress_install:
+          - attach_volume
           - install_cfn
           - install_wordpress
+        attach_volume:
+          commands:
+            01_attach_volume:
+              command: /tmp/attach-volume
+          files:
+            /tmp/attach-volume:
+              content:
+                Fn::Join:
+                - ' '
+                - - '#!/bin/bash
+                  
+                  '
+                  - 'instanceId=`wget -q -O - http://169.254.169.254/latest/meta-data/instance-id`
+                  
+                    '
+                  - aws ec2 attach-volume --region ap-southeast-2 --device "/dev/sdf" --instance-id $instanceId --volume-id
+                  - !Ref EbsVolume
+                  - '
+                    
+                    '
+                  - 'doesRequireFileSystem=`sudo file -s /dev/xvdf | grep data`
+                  
+                    '
+                  - 'if [[ $doesRequireFileSystem == "sudo file -s /dev/xvdf" ]]; then 
+                    
+                    '
+                  - 'echo "Creating file system..."
+                    
+                    '
+                  - 'sudo mkfs -t ext4 /dev/xvdf
+
+                    '
+                  - 'fi
+                  
+                    '
+                  - 'sudo mkdir /wordpress
+                    
+                    '
+                  - 'sudo mount /dev/xvdf /wordpress
+                  
+                    '
+                  - 'sudo ln -s /wordpress/ /var/www/html/
+                   
+                    '
+              group: root
+              mode: '000500'
+              owner: root
         install_cfn:
           files:
             /etc/cfn/cfn-hup.conf:
@@ -602,7 +671,11 @@ Resources:
           commands:
             01_configure_wordpress:
               command: /tmp/create-wp-config
-              cwd: /var/www/html/wordpress
+              cwd: /wordpress
+            # 02_setup_root_directory:
+            # 03_chown_for_apache:
+            #   command: sudo chown -R apache:apache wordpress/  
+            #   cwd: /wordpress/
           files:
             /tmp/create-wp-config:
               content:
@@ -611,7 +684,7 @@ Resources:
                 - - '#!/bin/bash
 
                     '
-                  - 'cp /var/www/html/wordpress/wp-config-sample.php /var/www/html/wordpress/wp-config.php
+                  - 'cp /wordpress/wp-config-sample.php /wordpress/wp-config.php
 
                     '
                   - sed -i "s/'database_name_here'/'
@@ -651,8 +724,9 @@ Resources:
                 enabled: 'true'
                 ensureRunning: 'true'
           sources:
-            /var/www/html: http://wordpress.org/latest.tar.gz
+            /wordpress: http://wordpress.org/latest.tar.gz
     Properties:
+      IamInstanceProfile: !Ref "InstanceProfile"
       ImageId:
         Fn::FindInMap:
         - AWSRegionArch2AMI
@@ -698,12 +772,12 @@ Resources:
               '
     Type: AWS::AutoScaling::LaunchConfiguration
   WebServerGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
     CreationPolicy:
       ResourceSignal:
         Timeout: PT15M
     Properties:
-      AvailabilityZones:
-        Fn::GetAZs: ''
+      AvailabilityZones: ['ap-southeast-2a']
       DesiredCapacity:
         Ref: WebServerCapacity
       LaunchConfigurationName:
@@ -712,12 +786,11 @@ Resources:
       - Ref: ElasticLoadBalancer
       MaxSize: '1'
       MinSize: '1'
-    Type: AWS::AutoScaling::AutoScalingGroup
     UpdatePolicy:
       AutoScalingRollingUpdate:
         MaxBatchSize: '1'
-        MinInstancesInService: '1'
-        PauseTime: PT15M
+        MinInstancesInService: '0'
+        PauseTime: PT5M
         WaitOnResourceSignals: 'true'
   WebServerSecurityGroup:
     Properties:
@@ -741,3 +814,12 @@ Resources:
         IpProtocol: tcp
         ToPort: '22'
     Type: AWS::EC2::SecurityGroup
+  EbsVolume:
+    Type: "AWS::EC2::Volume"
+    Properties:
+      AutoEnableIO: True
+      AvailabilityZone: 'ap-southeast-2a'
+      Encrypted: False
+      Size: 10
+      VolumeType: 'gp2'
+
