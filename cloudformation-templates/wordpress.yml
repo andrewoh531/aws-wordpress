@@ -248,7 +248,7 @@ Mappings:
       HVMG2: ami-1c0ba17f
       PV64: ami-df9e4cbc
     ap-southeast-2:
-      HVM64: ami-dc361ebf
+      HVM64: ami-1c47407f
       HVMG2: ami-bf0d0adc
       PV64: ami-63351d00
     ca-central-1:
@@ -303,6 +303,15 @@ Outputs:
           - DNSName
         - /wordpress
 Parameters:
+  SubnetA:
+    Description: Subnet in AZ A
+    Type: String
+  SubnetB:
+    Description: Subnet in AZ B
+    Type: String
+  SubnetC:
+    Description: Subnet in AZ C
+    Type: String
   DBAllocatedStorage:
     ConstraintDescription: must be between 5 and 1024Gb.
     Default: '10'
@@ -510,7 +519,7 @@ Resources:
     Type: AWS::RDS::DBSecurityGroup
   ElasticLoadBalancer:
     Properties:
-      AvailabilityZones: ['ap-southeast-2a']
+      AvailabilityZones: !GetAZs ''
       CrossZone: 'true'
       HealthCheck:
         HealthyThreshold: '2'
@@ -561,56 +570,8 @@ Resources:
       AWS::CloudFormation::Init:
         configSets:
           wordpress_install:
-          - attach_volume
           - install_cfn
           - install_wordpress
-        attach_volume:
-          commands:
-            01_attach_volume:
-              command: /tmp/attach-volume
-          files:
-            /tmp/attach-volume:
-              content:
-                Fn::Join:
-                - ' '
-                - - '#!/bin/bash
-                  
-                  '
-                  - 'instanceId=`wget -q -O - http://169.254.169.254/latest/meta-data/instance-id`
-                  
-                    '
-                  - aws ec2 attach-volume --region ap-southeast-2 --device "/dev/sdf" --instance-id $instanceId --volume-id
-                  - !Ref EbsVolume
-                  - '
-                    
-                    '
-                  - 'doesRequireFileSystem=`sudo file -s /dev/xvdf | grep data`
-                  
-                    '
-                  - 'if [[ $doesRequireFileSystem == "sudo file -s /dev/xvdf" ]]; then 
-                    
-                    '
-                  - 'echo "Creating file system..."
-                    
-                    '
-                  - 'sudo mkfs -t ext4 /dev/xvdf
-
-                    '
-                  - 'fi
-                  
-                    '
-                  - 'sudo mkdir /wordpress
-                    
-                    '
-                  - 'sudo mount /dev/xvdf /wordpress
-                  
-                    '
-                  - 'sudo ln -s /wordpress/ /var/www/html/
-                   
-                    '
-              group: root
-              mode: '000500'
-              owner: root
         install_cfn:
           files:
             /etc/cfn/cfn-hup.conf:
@@ -671,11 +632,11 @@ Resources:
           commands:
             01_configure_wordpress:
               command: /tmp/create-wp-config
-              cwd: /wordpress
+              cwd: /var/www/html/wordpress
             # 02_setup_root_directory:
             # 03_chown_for_apache:
             #   command: sudo chown -R apache:apache wordpress/  
-            #   cwd: /wordpress/
+            #   cwd: /var/www/html/
           files:
             /tmp/create-wp-config:
               content:
@@ -684,7 +645,7 @@ Resources:
                 - - '#!/bin/bash
 
                     '
-                  - 'cp /wordpress/wp-config-sample.php /wordpress/wp-config.php
+                  - 'cp /var/www/html/wordpress/wp-config-sample.php /var/www/html/wordpress/wp-config.php
 
                     '
                   - sed -i "s/'database_name_here'/'
@@ -724,7 +685,7 @@ Resources:
                 enabled: 'true'
                 ensureRunning: 'true'
           sources:
-            /wordpress: http://wordpress.org/latest.tar.gz
+            /var/www/html: http://wordpress.org/latest.tar.gz
     Properties:
       IamInstanceProfile: !Ref "InstanceProfile"
       ImageId:
@@ -777,7 +738,7 @@ Resources:
       ResourceSignal:
         Timeout: PT15M
     Properties:
-      AvailabilityZones: ['ap-southeast-2a']
+      AvailabilityZones: !GetAZs ''
       DesiredCapacity:
         Ref: WebServerCapacity
       LaunchConfigurationName:
@@ -793,6 +754,7 @@ Resources:
         PauseTime: PT5M
         WaitOnResourceSignals: 'true'
   WebServerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
     Properties:
       GroupDescription: Enable HTTP access via port 80 locked down to the load balancer
         + SSH access
@@ -813,13 +775,36 @@ Resources:
         FromPort: '22'
         IpProtocol: tcp
         ToPort: '22'
-    Type: AWS::EC2::SecurityGroup
-  EbsVolume:
-    Type: "AWS::EC2::Volume"
+  ElasticFileSystem: 
+    Type: "AWS::EFS::FileSystem"
+  EfsMountTargetA:
+    Type: "AWS::EFS::MountTarget"
     Properties:
-      AutoEnableIO: True
-      AvailabilityZone: 'ap-southeast-2a'
-      Encrypted: False
-      Size: 10
-      VolumeType: 'gp2'
+      FileSystemId: !Ref ElasticFileSystem
+      SecurityGroups: [ !GetAtt EfsSecurityGroup.GroupId ]
+      SubnetId: !Ref SubnetA
+  EfsMountTargetB:
+    Type: "AWS::EFS::MountTarget"
+    Properties:
+      FileSystemId: !Ref ElasticFileSystem
+      SecurityGroups: [ !GetAtt EfsSecurityGroup.GroupId ]
+      SubnetId: !Ref SubnetB
+  EfsMountTargetC:
+    Type: "AWS::EFS::MountTarget"
+    Properties:
+      FileSystemId: !Ref ElasticFileSystem
+      SecurityGroups: [ !GetAtt EfsSecurityGroup.GroupId ]
+      SubnetId: !Ref SubnetC
+  EfsSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: EFS Security Group
+      SecurityGroupIngress:
+      - FromPort: '2049'
+        IpProtocol: tcp
+        SourceSecurityGroupName:
+          Ref: WebServerSecurityGroup
+        ToPort: '2049'
+
+
 
