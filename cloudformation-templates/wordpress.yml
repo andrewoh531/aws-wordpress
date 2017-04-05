@@ -769,6 +769,8 @@ Resources:
         Ref: LaunchConfig
       LoadBalancerNames:
       - Ref: ElasticLoadBalancer
+      HealthCheckType: ELB
+      HealthCheckGracePeriod: 60
       MaxSize: '1'
       MinSize: '1'
     UpdatePolicy:
