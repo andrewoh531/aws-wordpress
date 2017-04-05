@@ -734,6 +734,9 @@ Resources:
             - '
 
               '
+            - 'sudo chown -R apache:apache /var/www/html/wordpress
+
+              '
             - '/opt/aws/bin/cfn-signal -e $? '
             - '         --stack '
             - Ref: AWS::StackName
