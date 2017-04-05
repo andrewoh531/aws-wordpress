@@ -737,6 +737,12 @@ Resources:
             - 'sudo chown -R apache:apache /var/www/html/wordpress
 
               '
+            - 'cp /var/www/html/wordpress/index.php /var/www/html/index.php
+
+              '
+            - 'sed -i.bak "s/wp-blog-header.php/wordpress\/wp-blog-header.php/g" /var/www/html/index.php
+            
+              '
             - '/opt/aws/bin/cfn-signal -e $? '
             - '         --stack '
             - Ref: AWS::StackName
