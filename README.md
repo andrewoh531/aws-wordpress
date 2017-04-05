@@ -16,7 +16,7 @@ export AWS_SECRET_ACCESS_KEY=aws-secret-key
 export WORD_PRESS_STACK_NAME=stack-name-for-cloudformation
 export EC2_KEY_PAIR=ec2-key-pair
 export DB_PASSWORD=rds-password
-export HOSTED_ZONE_NAME=hosted-zone-name
+export HOSTED_ZONE_NAME=www.yourwebsite.com
 ```
 
 # Limitations:
