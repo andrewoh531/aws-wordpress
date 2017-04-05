@@ -303,6 +303,9 @@ Outputs:
           - DNSName
         - /wordpress
 Parameters:
+  HostedZoneName:
+    Description: Name of the hosted zone
+    Type: String
   SubnetA:
     Description: Subnet in AZ A
     Type: String
@@ -826,6 +829,30 @@ Resources:
         SourceSecurityGroupName:
           Ref: WebServerSecurityGroup
         ToPort: '2049'
+  HostedZone:
+    Type: "AWS::Route53::HostedZone"
+    Properties: 
+      Name: !Ref HostedZoneName
+  RootApexDnsName:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      Name: !Ref HostedZoneName
+      AliasTarget:
+        DNSName: !GetAtt ElasticLoadBalancer.DNSName
+        HostedZoneId: !GetAtt ElasticLoadBalancer.CanonicalHostedZoneNameID
+      HostedZoneName: !Join [ '', [ !Ref HostedZoneName, '.' ] ]
+      Type: A
+  WwwDnsName:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      Name: !Join [ '', ['www.', !Ref HostedZoneName] ]
+      AliasTarget:
+        DNSName: !GetAtt ElasticLoadBalancer.DNSName
+        HostedZoneId: !GetAtt ElasticLoadBalancer.CanonicalHostedZoneNameID
+      HostedZoneName: !Join [ '', [ !Ref HostedZoneName, '.' ] ]
+      Type: A
+
+
 
 
 
